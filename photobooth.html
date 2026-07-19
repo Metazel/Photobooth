@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Cabine Photo</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cabine:#0E1526;      /* bleu nuit de la cabine */
+    --cabine-2:#18213A;
+    --rouge:#E63946;       /* rideau */
+    --ampoule:#FFC53D;     /* jaune ampoule */
+    --papier:#FFFFFF;
+    --texte:#F2F4F8;
+    --texte-2:#8D97AD;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:'Space Grotesk',system-ui,sans-serif;
+    background:var(--cabine);
+    color:var(--texte);
+    overflow-x:hidden;
+  }
+  .screen{display:none;min-height:100dvh;flex-direction:column}
+  .screen.active{display:flex}
+
+  /* ---------- ACCUEIL ---------- */
+  #home{align-items:center;justify-content:center;padding:24px;text-align:center;
+    background:
+      radial-gradient(circle at 50% -10%, #22304F 0%, var(--cabine) 55%);
+  }
+  .marquee{
+    display:inline-block;position:relative;
+    padding:26px 34px;border:4px solid var(--rouge);border-radius:14px;
+    background:var(--cabine-2);
+    box-shadow:0 0 0 6px var(--cabine-2), 0 18px 50px rgba(0,0,0,.5);
+  }
+  .bulbs{position:absolute;inset:-13px;pointer-events:none}
+  .bulb{
+    position:absolute;width:12px;height:12px;border-radius:50%;
+    background:var(--ampoule);
+    box-shadow:0 0 10px 2px rgba(255,197,61,.85);
+    animation:twinkle 1.6s infinite;
+  }
+  .bulb:nth-child(odd){animation-delay:.8s}
+  @keyframes twinkle{0%,100%{opacity:1}50%{opacity:.25;box-shadow:none}}
+  @media (prefers-reduced-motion: reduce){.bulb{animation:none}}
+  h1{
+    font-family:'Bebas Neue',sans-serif;
+    font-size:clamp(52px,14vw,84px);
+    letter-spacing:.06em;line-height:.95;color:var(--papier);
+  }
+  h1 span{color:var(--rouge)}
+  .tagline{margin-top:10px;color:var(--texte-2);font-size:15px}
+
+  .options{margin-top:34px;width:100%;max-width:360px;text-align:left}
+  .opt-label{
+    font-family:'Bebas Neue',sans-serif;letter-spacing:.12em;
+    font-size:15px;color:var(--ampoule);margin:18px 0 8px;
+  }
+  .seg{display:flex;gap:8px}
+  .seg button{
+    flex:1;padding:12px 0;border-radius:10px;border:1.5px solid #2C3A5C;
+    background:transparent;color:var(--texte);font-family:inherit;
+    font-size:16px;font-weight:500;cursor:pointer;
+  }
+  .seg button.sel{background:var(--rouge);border-color:var(--rouge);color:#fff;font-weight:700}
+
+  .btn{
+    display:block;width:100%;max-width:360px;
+    padding:17px;border:none;border-radius:12px;cursor:pointer;
+    font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.1em;
+  }
+  .btn:focus-visible,.seg button:focus-visible{outline:3px solid var(--ampoule);outline-offset:2px}
+  .btn-red{background:var(--rouge);color:#fff;margin-top:34px;box-shadow:0 8px 24px rgba(230,57,70,.35)}
+  .btn-ghost{background:transparent;color:var(--texte);border:1.5px solid #2C3A5C;font-size:20px}
+
+  /* ---------- CAPTURE ---------- */
+  #capture{background:#000}
+  .cam-wrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  video.miroir{transform:scaleX(-1)}
+
+  /* Bandes blanches de délimitation : cadre carré de cadrage */
+  .guide{position:absolute;inset:0;pointer-events:none}
+  .band{position:absolute;background:rgba(255,255,255,.92)}
+  .band.h{left:0;right:0}
+  .band.v{top:0;bottom:0}
+  .frame-line{
+    position:absolute;border:3px solid rgba(255,255,255,.95);
+    box-shadow:0 0 0 1px rgba(0,0,0,.25);
+  }
+  .shot-count{
+    position:absolute;top:calc(env(safe-area-inset-top) + 14px);left:0;right:0;
+    text-align:center;font-family:'Bebas Neue',sans-serif;
+    font-size:22px;letter-spacing:.2em;color:#fff;
+    text-shadow:0 2px 8px rgba(0,0,0,.6);
+  }
+  #countdown{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:'Bebas Neue',sans-serif;font-size:min(46vw,300px);
+    color:var(--ampoule);
+    text-shadow:0 0 40px rgba(255,197,61,.8),0 4px 12px rgba(0,0,0,.6);
+    pointer-events:none;
+  }
+  #countdown.pop{animation:pop .95s ease-out}
+  @keyframes pop{0%{transform:scale(1.35);opacity:0}18%{opacity:1;transform:scale(1)}85%{opacity:1}100%{opacity:0}}
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:60}
+  #flash.on{animation:flashA .45s ease-out}
+  @keyframes flashA{0%{opacity:1}100%{opacity:0}}
+
+  .cam-bar{
+    display:flex;gap:12px;padding:16px 16px calc(env(safe-area-inset-bottom) + 16px);
+    background:var(--cabine);
+  }
+  .cam-bar .btn{margin:0}
+  #btnFlip{max-width:90px}
+
+  /* ---------- RÉSULTAT ---------- */
+  #result{padding:20px 20px calc(env(safe-area-inset-bottom) + 24px);align-items:center;
+    background:radial-gradient(circle at 50% 0%, #22304F 0%, var(--cabine) 60%);}
+  #result h2{font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:.1em;margin:8px 0 16px}
+  .strip-holder{width:100%;display:flex;justify-content:center}
+  #stripImg{
+    width:min(62vw,300px);border-radius:4px;
+    box-shadow:0 20px 60px rgba(0,0,0,.6);
+    transform:rotate(-1.5deg);
+    background:#fff;
+  }
+  .actions{width:100%;max-width:400px;margin-top:26px;display:flex;flex-direction:column;gap:12px}
+  .row2{display:flex;gap:12px}
+  .row2 .btn{margin:0}
+
+  /* ---------- E-MAIL ---------- */
+  .mail-box{
+    width:100%;max-width:400px;margin-top:10px;
+    background:var(--cabine-2);border:1.5px solid #2C3A5C;border-radius:14px;
+    padding:16px;display:none;
+  }
+  .mail-box.open{display:block}
+  .mail-box label{font-size:14px;color:var(--texte-2)}
+  #email{
+    width:100%;margin-top:8px;padding:13px 14px;border-radius:10px;
+    border:1.5px solid #2C3A5C;background:var(--cabine);color:var(--texte);
+    font-size:17px;font-family:inherit;
+  }
+  #email:focus{outline:none;border-color:var(--ampoule)}
+  #email.ok{border-color:#3FBF7F}
+  .sugg{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;min-height:10px}
+  .sugg button{
+    padding:8px 12px;border-radius:999px;border:1px solid #2C3A5C;
+    background:var(--cabine);color:var(--texte);font-size:14px;font-family:inherit;cursor:pointer;
+  }
+  .mail-hint{font-size:13px;color:var(--texte-2);margin-top:10px;line-height:1.5}
+  #btnSendMail{margin-top:14px;font-size:22px}
+  #btnSendMail:disabled{opacity:.4}
+
+  #camError{
+    display:none;padding:24px;text-align:center;color:var(--texte);
+    position:absolute;inset:0;background:var(--cabine);z-index:5;
+    flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  }
+  #camError p{color:var(--texte-2);max-width:320px;line-height:1.5}
+
+  /* ---------- IMPRESSION ---------- */
+  #printArea{display:none}
+  @media print{
+    body>*{display:none !important}
+    #printArea{display:block !important}
+    #printArea img{width:60mm;display:block;margin:0 auto}
+    @page{margin:8mm}
+  }
+</style>
+</head>
+<body>
+
+<!-- ACCUEIL -->
+<section id="home" class="screen active">
+  <div class="marquee">
+    <div class="bulbs" id="bulbs"></div>
+    <h1>CABINE<br><span>PHOTO</span></h1>
+  </div>
+  <p class="tagline">Souriez, la pellicule est offerte.</p>
+
+  <div class="options">
+    <div class="opt-label">Compte à rebours</div>
+    <div class="seg" id="segTimer" role="group" aria-label="Durée du compte à rebours">
+      <button data-v="3" class="sel">3 s</button>
+      <button data-v="5">5 s</button>
+      <button data-v="10">10 s</button>
+    </div>
+    <div class="opt-label">Nombre de photos</div>
+    <div class="seg" id="segShots" role="group" aria-label="Nombre de photos">
+      <button data-v="1">1</button>
+      <button data-v="3">3</button>
+      <button data-v="4" class="sel">4</button>
+    </div>
+  </div>
+
+  <button class="btn btn-red" id="btnStart">Entrer dans la cabine</button>
+</section>
+
+<!-- CAPTURE -->
+<section id="capture" class="screen">
+  <div class="cam-wrap">
+    <video id="video" autoplay playsinline muted class="miroir"></video>
+    <div class="guide" id="guide"></div>
+    <div class="shot-count" id="shotCount"></div>
+    <div id="countdown"></div>
+    <div id="camError">
+      <h2 style="font-family:'Bebas Neue';font-size:28px;letter-spacing:.08em">Caméra indisponible</h2>
+      <p>Autorisez l'accès à la caméra dans les réglages de votre navigateur, puis réessayez.</p>
+      <button class="btn btn-ghost" style="max-width:220px" onclick="location.reload()">Réessayer</button>
+    </div>
+  </div>
+  <div class="cam-bar">
+    <button class="btn btn-ghost" id="btnBack">Retour</button>
+    <button class="btn btn-ghost" id="btnFlip" aria-label="Changer de caméra">⟲</button>
+    <button class="btn btn-red" id="btnShoot">Photo !</button>
+  </div>
+</section>
+
+<!-- RÉSULTAT -->
+<section id="result" class="screen">
+  <h2>Votre bande photo</h2>
+  <div class="strip-holder"><img id="stripImg" alt="Bande photo"></div>
+
+  <div class="actions">
+    <div class="row2">
+      <button class="btn btn-ghost" id="btnPrint">Imprimer</button>
+      <button class="btn btn-ghost" id="btnSave">Enregistrer</button>
+    </div>
+    <button class="btn btn-red" id="btnMailToggle">Envoyer par e-mail</button>
+
+    <div class="mail-box" id="mailBox">
+      <label for="email">Adresse du destinataire</label>
+      <input id="email" type="email" inputmode="email" autocomplete="email"
+             autocapitalize="off" spellcheck="false" placeholder="prenom.nom@exemple.fr">
+      <div class="sugg" id="sugg"></div>
+      <p class="mail-hint" id="mailHint">La bande photo sera jointe via la feuille de partage — choisissez « Mail ». L'adresse saisie est copiée pour être collée dans le champ destinataire.</p>
+      <button class="btn btn-red" id="btnSendMail" disabled>Envoyer</button>
+    </div>
+
+    <button class="btn btn-ghost" id="btnAgain">Recommencer</button>
+  </div>
+</section>
+
+<div id="flash"></div>
+<div id="printArea"><img id="printImg" alt=""></div>
+
+<script>
+/* ---------- État ---------- */
+const state = { timer:3, shots:4, facing:'user', stream:null, photos:[], stripData:null };
+
+/* ---------- Ampoules du fronton ---------- */
+(function(){
+  const box=document.getElementById('bulbs');
+  const N=26;
+  for(let i=0;i<N;i++){
+    const b=document.createElement('div');b.className='bulb';
+    const t=i/N; let x,y;
+    if(t<.25){x=t/.25;y=0}else if(t<.5){x=1;y=(t-.25)/.25}
+    else if(t<.75){x=1-(t-.5)/.25;y=1}else{x=0;y=1-(t-.75)/.25}
+    b.style.left=`calc(${(x*100).toFixed(1)}% - 6px)`;
+    b.style.top=`calc(${(y*100).toFixed(1)}% - 6px)`;
+    box.appendChild(b);
+  }
+})();
+
+/* ---------- Segments d'options ---------- */
+function segInit(id,key){
+  const seg=document.getElementById(id);
+  seg.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      seg.querySelectorAll('button').forEach(b=>b.classList.remove('sel'));
+      btn.classList.add('sel');
+      state[key]=parseInt(btn.dataset.v,10);
+    });
+  });
+}
+segInit('segTimer','timer');
+segInit('segShots','shots');
+
+/* ---------- Navigation écrans ---------- */
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ---------- Caméra ---------- */
+const video=document.getElementById('video');
+async function startCamera(){
+  stopCamera();
+  try{
+    state.stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:state.facing,width:{ideal:1280},height:{ideal:1280}},audio:false
+    });
+    video.srcObject=state.stream;
+    video.classList.toggle('miroir',state.facing==='user');
+    document.getElementById('camError').style.display='none';
+  }catch(e){
+    document.getElementById('camError').style.display='flex';
+  }
+}
+function stopCamera(){
+  if(state.stream){state.stream.getTracks().forEach(t=>t.stop());state.stream=null;}
+}
+
+/* ---------- Bandes blanches de cadrage (zone carrée) ---------- */
+function drawGuide(){
+  const g=document.getElementById('guide');
+  const W=g.clientWidth,H=g.clientHeight;
+  const side=Math.min(W,H)*0.88;
+  const left=(W-side)/2, top=(H-side)/2;
+  g.innerHTML=
+    `<div class="band h" style="top:0;height:${top}px"></div>`+
+    `<div class="band h" style="bottom:0;height:${H-top-side}px"></div>`+
+    `<div class="band v" style="left:0;width:${left}px;top:${top}px;bottom:${H-top-side}px"></div>`+
+    `<div class="band v" style="right:0;width:${W-left-side}px;top:${top}px;bottom:${H-top-side}px"></div>`+
+    `<div class="frame-line" style="left:${left}px;top:${top}px;width:${side}px;height:${side}px"></div>`;
+}
+window.addEventListener('resize',()=>{ if(document.getElementById('capture').classList.contains('active')) drawGuide(); });
+
+/* ---------- Séquence de prise de vue ---------- */
+const cdEl=document.getElementById('countdown');
+const shotCountEl=document.getElementById('shotCount');
+let shooting=false;
+
+function wait(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function countdown(sec){
+  for(let n=sec;n>=1;n--){
+    cdEl.textContent=n;
+    cdEl.classList.remove('pop');void cdEl.offsetWidth;cdEl.classList.add('pop');
+    await wait(1000);
+  }
+  cdEl.textContent='';
+}
+
+function capturePhoto(){
+  const vw=video.videoWidth,vh=video.videoHeight;
+  const side=Math.min(vw,vh);
+  const sx=(vw-side)/2, sy=(vh-side)/2;
+  const c=document.createElement('canvas');c.width=800;c.height=800;
+  const ctx=c.getContext('2d');
+  if(state.facing==='user'){ctx.translate(800,0);ctx.scale(-1,1);}
+  ctx.drawImage(video,sx,sy,side,side,0,0,800,800);
+  return c;
+}
+
+async function runSession(){
+  if(shooting||!state.stream)return;
+  shooting=true;
+  state.photos=[];
+  document.getElementById('btnShoot').disabled=true;
+  for(let i=1;i<=state.shots;i++){
+    shotCountEl.textContent=`PHOTO ${i} / ${state.shots}`;
+    await countdown(state.timer);
+    document.getElementById('flash').classList.remove('on');
+    void document.getElementById('flash').offsetWidth;
+    document.getElementById('flash').classList.add('on');
+    state.photos.push(capturePhoto());
+    await wait(700);
+  }
+  shotCountEl.textContent='';
+  document.getElementById('btnShoot').disabled=false;
+  shooting=false;
+  composeStrip();
+  stopCamera();
+  show('result');
+  window.scrollTo(0,0);
+}
+
+/* ---------- Composition de la bande à bandes blanches ---------- */
+function composeStrip(){
+  const M=34;              // marge blanche extérieure
+  const G=26;              // bande blanche entre photos
+  const F=560;             // côté de chaque photo
+  const W=F+2*M;
+  const footer=110;
+  const n=state.photos.length;
+  const H=M+n*F+(n-1)*G+footer;
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#FFFFFF';ctx.fillRect(0,0,W,H);      // fond papier
+  state.photos.forEach((p,i)=>{
+    const y=M+i*(F+G);
+    ctx.drawImage(p,M,y,F,F);
+  });
+  /* pied de bande */
+  const fy=M+n*F+(n-1)*G;
+  ctx.fillStyle='#0E1526';
+  ctx.font='700 44px "Bebas Neue", sans-serif';
+  ctx.textAlign='center';
+  ctx.fillText('CABINE PHOTO',W/2,fy+52);
+  ctx.fillStyle='#8D97AD';
+  ctx.font='400 24px "Space Grotesk", sans-serif';
+  const d=new Date();
+  ctx.fillText(d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})+' · '+
+               d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),W/2,fy+88);
+  state.stripData=c.toDataURL('image/jpeg',0.92);
+  document.getElementById('stripImg').src=state.stripData;
+  document.getElementById('printImg').src=state.stripData;
+}
+
+/* ---------- Boutons principaux ---------- */
+document.getElementById('btnStart').addEventListener('click',async()=>{
+  show('capture');
+  await startCamera();
+  requestAnimationFrame(drawGuide);
+});
+document.getElementById('btnBack').addEventListener('click',()=>{stopCamera();show('home');});
+document.getElementById('btnFlip').addEventListener('click',async()=>{
+  state.facing=state.facing==='user'?'environment':'user';
+  await startCamera();
+});
+document.getElementById('btnShoot').addEventListener('click',runSession);
+document.getElementById('btnAgain').addEventListener('click',async()=>{
+  document.getElementById('mailBox').classList.remove('open');
+  show('capture');
+  await startCamera();
+  requestAnimationFrame(drawGuide);
+});
+
+/* ---------- Impression ---------- */
+document.getElementById('btnPrint').addEventListener('click',()=>window.print());
+
+/* ---------- Enregistrement ---------- */
+document.getElementById('btnSave').addEventListener('click',()=>{
+  const a=document.createElement('a');
+  a.href=state.stripData;
+  a.download='bande-photo.jpg';
+  document.body.appendChild(a);a.click();a.remove();
+});
+
+/* ---------- E-mail avec aide à la saisie ---------- */
+const DOMAINES=['gmail.com','icloud.com','outlook.fr','outlook.com','orange.fr','free.fr','laposte.net','yahoo.fr','hotmail.fr','sfr.fr','wanadoo.fr','protonmail.com'];
+const emailEl=document.getElementById('email');
+const suggEl=document.getElementById('sugg');
+const sendBtn=document.getElementById('btnSendMail');
+
+document.getElementById('btnMailToggle').addEventListener('click',()=>{
+  const box=document.getElementById('mailBox');
+  box.classList.toggle('open');
+  if(box.classList.contains('open')){emailEl.focus();renderSugg();}
+});
+
+function emailValide(v){return /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(v);}
+
+function renderSugg(){
+  const v=emailEl.value.trim();
+  suggEl.innerHTML='';
+  const at=v.indexOf('@');
+  let list=[];
+  if(v===''){list=[];}
+  else if(at===-1){list=DOMAINES.slice(0,4).map(d=>v+'@'+d);}
+  else{
+    const local=v.slice(0,at), part=v.slice(at+1).toLowerCase();
+    list=DOMAINES.filter(d=>d.startsWith(part)&&d!==part).slice(0,4).map(d=>local+'@'+d);
+  }
+  list.forEach(s=>{
+    const b=document.createElement('button');
+    b.type='button';b.textContent=s;
+    b.addEventListener('click',()=>{emailEl.value=s;renderSugg();emailEl.focus();});
+    suggEl.appendChild(b);
+  });
+  const ok=emailValide(v);
+  emailEl.classList.toggle('ok',ok);
+  sendBtn.disabled=!ok;
+}
+emailEl.addEventListener('input',renderSugg);
+
+async function dataURLtoFile(dataUrl,name){
+  const res=await fetch(dataUrl);
+  const blob=await res.blob();
+  return new File([blob],name,{type:'image/jpeg'});
+}
+
+sendBtn.addEventListener('click',async()=>{
+  const dest=emailEl.value.trim();
+  const file=await dataURLtoFile(state.stripData,'bande-photo.jpg');
+  /* Partage natif : la photo est jointe, l'adresse est copiée pour le champ « À » */
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{await navigator.clipboard.writeText(dest);}catch(e){}
+    try{
+      await navigator.share({files:[file],title:'Bande photo',text:'Voici notre bande photo !'});
+      document.getElementById('mailHint').textContent='Adresse copiée ✓ — collez-la dans le champ destinataire de Mail.';
+      return;
+    }catch(e){ if(e.name==='AbortError') return; }
+  }
+  /* Repli : téléchargement + brouillon Mail pré-rempli */
+  document.getElementById('btnSave').click();
+  location.href='mailto:'+encodeURIComponent(dest)
+    +'?subject='+encodeURIComponent('Notre bande photo')
+    +'&body='+encodeURIComponent('Voici notre bande photo (image téléchargée à joindre).');
+});
+
+/* ---------- Nettoyage ---------- */
+window.addEventListener('pagehide',stopCamera);
+</script>
+</body>
+</html>
