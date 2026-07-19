@@ -189,6 +189,19 @@
   .mail-hint{font-size:13px;color:var(--texte-2);margin-top:10px;line-height:1.5}
   #btnSendMail{margin-top:14px;font-size:22px}
   #btnSendMail:disabled{opacity:.4}
+  .sugg-label{width:100%;font-size:12px;color:var(--texte-2);margin-top:10px}
+
+  /* ---------- CONFIRMATION D'ENVOI ---------- */
+  #okOverlay{display:none;position:fixed;inset:0;background:rgba(8,12,24,.95);z-index:80;
+    align-items:center;justify-content:center;padding:24px;text-align:center}
+  #okOverlay.on{display:flex}
+  .ok-card{background:var(--cabine-2);border:2px solid #3FBF7F;border-radius:18px;
+    padding:30px 24px;max-width:360px;width:100%}
+  .ok-emoji{font-size:52px}
+  .ok-card h2{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:.08em;margin:8px 0}
+  .ok-card p{color:var(--texte);line-height:1.5;word-break:break-all}
+  .ok-count{color:var(--texte-2);font-size:14px;margin-top:10px}
+  .ok-card .btn{margin-top:18px}
 
   #camError{
     display:none;padding:24px;text-align:center;color:var(--texte);
@@ -336,6 +349,15 @@
   </div>
 </section>
 
+<div id="okOverlay" role="alert">
+  <div class="ok-card">
+    <div class="ok-emoji">📬</div>
+    <h2>Photos envoyées !</h2>
+    <p>Vos photos ont été envoyées à<br><b id="okDest"></b></p>
+    <p class="ok-count">Retour à l'accueil dans <span id="okSec">5</span> s…</p>
+    <button class="btn btn-red" id="okHome">Retour à l'accueil</button>
+  </div>
+</div>
 <div id="flash"></div>
 <div id="printArea"></div>
 
@@ -347,6 +369,12 @@ const state = {
   footerImg:null, footerData:null,
   stream:null, photos:[], stripData:null, stripW:0, stripH:0
 };
+
+/* ---------- Envoi d'e-mail automatique (facultatif) ----------
+   Collez ici l'URL « /exec » de votre script Google Apps Script
+   (voir le fichier envoi-mail-apps-script.gs fourni avec l'application).
+   Laissez vide ('') pour utiliser la feuille de partage iOS à la place. */
+const MAIL_ENDPOINT='';
 
 /* ---------- Filtres : aperçu CSS + traitement pixel à la capture ---------- */
 const FILTRES = {
@@ -903,24 +931,47 @@ document.getElementById('btnQueue').addEventListener('click',async(e)=>{
   renderPlanche();
 })();
 
+/* ---------- Nom de fichier : événement + horodatage ---------- */
+function slugEvenement(){
+  const t=document.getElementById('footerText').value.trim()||'cabine-photo';
+  return t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+          .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'cabine-photo';
+}
+function nomFichier(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return `${slugEvenement()}_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.jpg`;
+}
+
 /* ---------- Enregistrement ---------- */
 document.getElementById('btnSave').addEventListener('click',()=>{
   const a=document.createElement('a');
   a.href=state.stripData;
-  a.download='bande-photo.jpg';
+  a.download=nomFichier();
   document.body.appendChild(a);a.click();a.remove();
 });
 
-/* ---------- E-mail avec aide à la saisie ---------- */
+/* ---------- E-mail : aide à la saisie + adresses déjà utilisées ---------- */
 const DOMAINES=['gmail.com','icloud.com','outlook.fr','outlook.com','orange.fr','free.fr','laposte.net','yahoo.fr','hotmail.fr','sfr.fr','wanadoo.fr','protonmail.com'];
 const emailEl=document.getElementById('email');
 const suggEl=document.getElementById('sugg');
 const sendBtn=document.getElementById('btnSendMail');
 
+let emailsUtilises=[];
+try{ emailsUtilises=JSON.parse(localStorage.getItem('cabinePhoto.emails'))||[]; }catch(e){}
+function saveEmailUsed(m){
+  emailsUtilises=[m,...emailsUtilises.filter(x=>x!==m)].slice(0,8);
+  try{ localStorage.setItem('cabinePhoto.emails',JSON.stringify(emailsUtilises)); }catch(e){}
+}
+
 document.getElementById('btnMailToggle').addEventListener('click',()=>{
   const box=document.getElementById('mailBox');
   box.classList.toggle('open');
-  if(box.classList.contains('open')){emailEl.focus();renderSugg();}
+  if(box.classList.contains('open')){
+    document.getElementById('mailHint').textContent=MAIL_ENDPOINT
+      ? 'Vos photos partiront directement par e-mail à l\'adresse indiquée.'
+      : 'La bande photo sera jointe via la feuille de partage — choisissez « Mail ». L\'adresse saisie est copiée pour être collée dans le champ destinataire.';
+    emailEl.focus();renderSugg();
+  }
 });
 
 function emailValide(v){return /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(v);}
@@ -928,13 +979,24 @@ function emailValide(v){return /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(v);}
 function renderSugg(){
   const v=emailEl.value.trim();
   suggEl.innerHTML='';
-  const at=v.indexOf('@');
-  let list=[];
-  if(v===''){list=[];}
-  else if(at===-1){list=DOMAINES.slice(0,4).map(d=>v+'@'+d);}
-  else{
-    const local=v.slice(0,at), part=v.slice(at+1).toLowerCase();
-    list=DOMAINES.filter(d=>d.startsWith(part)&&d!==part).slice(0,4).map(d=>local+'@'+d);
+  let list=[], label='';
+  if(v===''){
+    list=emailsUtilises.slice(0,5);
+    if(list.length)label='Adresses déjà utilisées :';
+  }else{
+    const histo=emailsUtilises.filter(m=>m.toLowerCase().startsWith(v.toLowerCase())&&m.toLowerCase()!==v.toLowerCase());
+    const at=v.indexOf('@');
+    let dom=[];
+    if(at===-1){dom=DOMAINES.slice(0,4).map(d=>v+'@'+d);}
+    else{
+      const local=v.slice(0,at), part=v.slice(at+1).toLowerCase();
+      dom=DOMAINES.filter(d=>d.startsWith(part)&&d!==part).map(d=>local+'@'+d);
+    }
+    list=[...new Set([...histo,...dom])].slice(0,5);
+  }
+  if(label){
+    const s=document.createElement('span');s.className='sugg-label';s.textContent=label;
+    suggEl.appendChild(s);
   }
   list.forEach(s=>{
     const b=document.createElement('button');
@@ -954,21 +1016,76 @@ async function dataURLtoFile(dataUrl,name){
   return new File([blob],name,{type:'image/jpeg'});
 }
 
+/* ---------- Confirmation d'envoi + retour accueil (5 s ou bouton) ---------- */
+let okTimer=null;
+function showSuccess(dest){
+  document.getElementById('okDest').textContent=dest;
+  document.getElementById('okOverlay').classList.add('on');
+  let s=5;
+  document.getElementById('okSec').textContent=s;
+  clearInterval(okTimer);
+  okTimer=setInterval(()=>{
+    s--;
+    document.getElementById('okSec').textContent=Math.max(s,0);
+    if(s<=0)finishSuccess();
+  },1000);
+}
+function finishSuccess(){
+  clearInterval(okTimer);
+  document.getElementById('okOverlay').classList.remove('on');
+  document.getElementById('mailBox').classList.remove('open');
+  emailEl.value='';
+  stopCamera();
+  show('home');
+  window.scrollTo(0,0);
+}
+document.getElementById('okHome').addEventListener('click',finishSuccess);
+
+/* ---------- Envoi ---------- */
 sendBtn.addEventListener('click',async()=>{
   const dest=emailEl.value.trim();
-  const file=await dataURLtoFile(state.stripData,'bande-photo.jpg');
-  if(navigator.canShare && navigator.canShare({files:[file]})){
-    try{await navigator.clipboard.writeText(dest);}catch(e){}
-    try{
-      await navigator.share({files:[file],title:'Bande photo',text:'Voici notre bande photo !'});
-      document.getElementById('mailHint').textContent='Adresse copiée ✓ — collez-la dans le champ destinataire de Mail.';
-      return;
-    }catch(e){ if(e.name==='AbortError') return; }
+  sendBtn.disabled=true;
+  const label=sendBtn.textContent;
+  sendBtn.textContent='Envoi…';
+  try{
+    if(MAIL_ENDPOINT){
+      /* envoi direct, sans aucune étape de sélection */
+      await fetch(MAIL_ENDPOINT,{
+        method:'POST', mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({
+          to:dest,
+          event:document.getElementById('footerText').value.trim()||'Cabine photo',
+          filename:nomFichier(),
+          image:state.stripData
+        })
+      });
+      saveEmailUsed(dest);
+      showSuccess(dest);
+    }else{
+      /* pas de service configuré : repli sur la feuille de partage iOS */
+      const file=await dataURLtoFile(state.stripData,nomFichier());
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        try{await navigator.clipboard.writeText(dest);}catch(e){}
+        await navigator.share({files:[file],title:'Bande photo',text:'Voici notre bande photo !'});
+        saveEmailUsed(dest);
+        showSuccess(dest);
+      }else{
+        document.getElementById('btnSave').click();
+        saveEmailUsed(dest);
+        location.href='mailto:'+encodeURIComponent(dest)
+          +'?subject='+encodeURIComponent('Notre bande photo')
+          +'&body='+encodeURIComponent('Voici notre bande photo (image téléchargée à joindre).');
+      }
+    }
+  }catch(e){
+    if(e.name!=='AbortError'){
+      document.getElementById('mailHint').textContent="L'envoi n'a pas abouti — vérifiez la connexion et réessayez.";
+    }
+  }finally{
+    sendBtn.textContent=label;
+    renderSugg();
   }
-  document.getElementById('btnSave').click();
-  location.href='mailto:'+encodeURIComponent(dest)
-    +'?subject='+encodeURIComponent('Notre bande photo')
-    +'&body='+encodeURIComponent('Voici notre bande photo (image téléchargée à joindre).');
 });
 
 /* ---------- Mémorisation de la session ----------
