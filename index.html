@@ -190,6 +190,17 @@
   #btnSendMail{margin-top:14px;font-size:22px}
   #btnSendMail:disabled{opacity:.4}
   .sugg-label{width:100%;font-size:12px;color:var(--texte-2);margin-top:10px}
+  .dest-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .dest-chips:empty{margin-top:0}
+  .dest-chip{
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--cabine);border:1.5px solid #3FBF7F;border-radius:999px;
+    padding:7px 8px 7px 12px;font-size:14px;color:var(--texte);
+  }
+  .dest-chip button{
+    background:#2C3A5C;border:none;border-radius:50%;width:20px;height:20px;
+    color:var(--texte);font-size:12px;line-height:1;cursor:pointer;
+  }
 
   /* ---------- CONFIRMATION D'ENVOI ---------- */
   #okOverlay{display:none;position:fixed;inset:0;background:rgba(8,12,24,.95);z-index:80;
@@ -262,7 +273,7 @@
       <button data-v="solo" class="sel">Solo</button>
       <button data-v="groupe">Groupe</button>
     </div>
-    <p class="mini-note" id="modeNote">Groupe : cadre élargi, caméra arrière et compte à rebours de 10 s pour rejoindre la pose.</p>
+    <p class="mini-note" id="modeNote">Groupe : cadre élargi et compte à rebours de 10 s pour prendre la pose à plusieurs.</p>
 
     <div class="opt-label">Compte à rebours</div>
     <div class="seg" id="segTimer" role="group" aria-label="Durée du compte à rebours">
@@ -337,9 +348,10 @@
     <button class="btn btn-red" id="btnMailToggle">Envoyer par e-mail</button>
 
     <div class="mail-box" id="mailBox">
-      <label for="email">Adresse du destinataire</label>
+      <label for="email">Adresses des destinataires</label>
+      <div class="dest-chips" id="destChips"></div>
       <input id="email" type="email" inputmode="email" autocomplete="email"
-             autocapitalize="off" spellcheck="false" placeholder="prenom.nom@exemple.fr">
+             autocapitalize="off" spellcheck="false" placeholder="Tapez une adresse puis validez ↵">
       <div class="sugg" id="sugg"></div>
       <p class="mail-hint" id="mailHint">La bande photo sera jointe via la feuille de partage — choisissez « Mail ». L'adresse saisie est copiée pour être collée dans le champ destinataire.</p>
       <button class="btn btn-red" id="btnSendMail" disabled>Envoyer</button>
@@ -427,10 +439,7 @@ segInit('segTimer','timer');
 segInit('segShots','shots');
 segInit('segMode','mode',(m)=>{
   if(m==='groupe'){
-    state.facing='environment';
     selectSeg('segTimer',10);state.timer=10;
-  }else{
-    state.facing='user';
   }
 });
 segInit('segDecor','decor',()=>{ state.decorImg=null; state.decorData=null; decorStatus.classList.remove('on'); });
@@ -976,13 +985,47 @@ document.getElementById('btnMailToggle').addEventListener('click',()=>{
 
 function emailValide(v){return /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(v);}
 
+/* ---------- Destinataires multiples (puces) ---------- */
+let destinataires=[];
+function renderDest(){
+  const box=document.getElementById('destChips');
+  box.innerHTML='';
+  destinataires.forEach(m=>{
+    const c=document.createElement('span');
+    c.className='dest-chip';
+    c.appendChild(document.createTextNode(m+' '));
+    const x=document.createElement('button');
+    x.type='button';x.textContent='✕';x.setAttribute('aria-label','Retirer '+m);
+    x.addEventListener('click',()=>{
+      destinataires=destinataires.filter(v=>v!==m);
+      renderDest();renderSugg();
+    });
+    c.appendChild(x);
+    box.appendChild(c);
+  });
+}
+function addDest(m){
+  m=(m||'').trim().toLowerCase();
+  if(!emailValide(m)||destinataires.includes(m))return false;
+  destinataires.push(m);
+  emailEl.value='';
+  renderDest();renderSugg();
+  return true;
+}
+emailEl.addEventListener('keydown',(e)=>{
+  if(e.key==='Enter'||e.key===','||e.key===';'){
+    e.preventDefault();
+    addDest(emailEl.value);
+  }
+});
+
 function renderSugg(){
   const v=emailEl.value.trim();
   suggEl.innerHTML='';
   let list=[], label='';
   if(v===''){
-    list=emailsUtilises.slice(0,5);
-    if(list.length)label='Adresses déjà utilisées :';
+    list=emailsUtilises.filter(m=>!destinataires.includes(m)).slice(0,5);
+    if(list.length)label='Adresses déjà utilisées — touchez pour ajouter :';
   }else{
     const histo=emailsUtilises.filter(m=>m.toLowerCase().startsWith(v.toLowerCase())&&m.toLowerCase()!==v.toLowerCase());
     const at=v.indexOf('@');
@@ -992,7 +1035,7 @@ function renderSugg(){
       const local=v.slice(0,at), part=v.slice(at+1).toLowerCase();
       dom=DOMAINES.filter(d=>d.startsWith(part)&&d!==part).map(d=>local+'@'+d);
     }
-    list=[...new Set([...histo,...dom])].slice(0,5);
+    list=[...new Set([...histo,...dom])].filter(m=>!destinataires.includes(m.toLowerCase())).slice(0,5);
   }
   if(label){
     const s=document.createElement('span');s.className='sugg-label';s.textContent=label;
@@ -1001,12 +1044,13 @@ function renderSugg(){
   list.forEach(s=>{
     const b=document.createElement('button');
     b.type='button';b.textContent=s;
-    b.addEventListener('click',()=>{emailEl.value=s;renderSugg();emailEl.focus();});
+    b.addEventListener('click',()=>{addDest(s);emailEl.focus();});
     suggEl.appendChild(b);
   });
   const ok=emailValide(v);
   emailEl.classList.toggle('ok',ok);
-  sendBtn.disabled=!ok;
+  sendBtn.disabled=!(destinataires.length>0||ok);
+  sendBtn.textContent=destinataires.length>1?`Envoyer (${destinataires.length})`:'Envoyer';
 }
 emailEl.addEventListener('input',renderSugg);
 
@@ -1035,45 +1079,53 @@ function finishSuccess(){
   document.getElementById('okOverlay').classList.remove('on');
   document.getElementById('mailBox').classList.remove('open');
   emailEl.value='';
+  destinataires=[];
+  renderDest();
   stopCamera();
   show('home');
   window.scrollTo(0,0);
 }
 document.getElementById('okHome').addEventListener('click',finishSuccess);
 
-/* ---------- Envoi ---------- */
+/* ---------- Envoi (un e-mail par destinataire) ---------- */
 sendBtn.addEventListener('click',async()=>{
-  const dest=emailEl.value.trim();
+  /* l'adresse en cours de saisie, si valide, est ajoutée automatiquement */
+  addDest(emailEl.value);
+  const dests=[...destinataires];
+  if(dests.length===0)return;
   sendBtn.disabled=true;
   const label=sendBtn.textContent;
   sendBtn.textContent='Envoi…';
   try{
     if(MAIL_ENDPOINT){
-      /* envoi direct, sans aucune étape de sélection */
-      await fetch(MAIL_ENDPOINT,{
-        method:'POST', mode:'no-cors',
-        headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body:JSON.stringify({
-          to:dest,
-          event:document.getElementById('footerText').value.trim()||'Cabine photo',
-          filename:nomFichier(),
-          image:state.stripData
-        })
-      });
-      saveEmailUsed(dest);
-      showSuccess(dest);
+      /* envoi direct : chaque destinataire reçoit son propre e-mail
+         (personne ne voit les adresses des autres) */
+      const corps={
+        event:document.getElementById('footerText').value.trim()||'Cabine photo',
+        filename:nomFichier(),
+        image:state.stripData
+      };
+      for(const d of dests){
+        await fetch(MAIL_ENDPOINT,{
+          method:'POST', mode:'no-cors',
+          headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body:JSON.stringify({...corps,to:d})
+        });
+      }
+      dests.forEach(saveEmailUsed);
+      showSuccess(dests.join(', '));
     }else{
       /* pas de service configuré : repli sur la feuille de partage iOS */
       const file=await dataURLtoFile(state.stripData,nomFichier());
       if(navigator.canShare && navigator.canShare({files:[file]})){
-        try{await navigator.clipboard.writeText(dest);}catch(e){}
+        try{await navigator.clipboard.writeText(dests.join(', '));}catch(e){}
         await navigator.share({files:[file],title:'Bande photo',text:'Voici notre bande photo !'});
-        saveEmailUsed(dest);
-        showSuccess(dest);
+        dests.forEach(saveEmailUsed);
+        showSuccess(dests.join(', '));
       }else{
         document.getElementById('btnSave').click();
-        saveEmailUsed(dest);
-        location.href='mailto:'+encodeURIComponent(dest)
+        dests.forEach(saveEmailUsed);
+        location.href='mailto:'+encodeURIComponent(dests.join(','))
           +'?subject='+encodeURIComponent('Notre bande photo')
           +'&body='+encodeURIComponent('Voici notre bande photo (image téléchargée à joindre).');
       }
@@ -1108,7 +1160,6 @@ function restoreSession(){
   state.mode=s.mode||'solo'; state.timer=s.timer||3; state.shots=s.shots||4;
   state.filter=FILTRES[s.filter]?s.filter:'none';
   state.decor=s.decor||'none';
-  state.facing=state.mode==='groupe'?'environment':'user';
   selectSeg('segMode',state.mode);
   selectSeg('segTimer',state.timer);
   selectSeg('segShots',state.shots);
