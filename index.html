@@ -189,12 +189,29 @@
   .row2 .btn{margin:0}
 
   /* ---------- E-MAIL ---------- */
-  .mail-box{
-    width:100%;max-width:400px;margin-top:10px;
-    background:var(--cabine-2);border:1.5px solid #2C3A5C;border-radius:14px;
-    padding:16px;display:none;
+  #mailOverlay{
+    display:none;position:fixed;inset:0;z-index:70;
+    background:rgba(8,12,24,.9);padding:20px;
+    align-items:center;justify-content:center;overflow-y:auto;
   }
-  .mail-box.open{display:block}
+  #mailOverlay.on{display:flex}
+  .mail-box{
+    width:100%;max-width:400px;
+    background:var(--cabine-2);border:1.5px solid #2C3A5C;border-radius:14px;
+    padding:16px;
+  }
+  .mail-cible{
+    display:flex;gap:12px;align-items:center;margin-bottom:14px;
+    padding-bottom:14px;border-bottom:1px solid #2C3A5C;
+  }
+  .mail-cible img{
+    width:46px;height:62px;object-fit:contain;background:#fff;
+    border-radius:4px;flex:0 0 auto;
+  }
+  .mail-what{font-family:'Bebas Neue',sans-serif;letter-spacing:.06em;font-size:19px}
+  .mail-sub{font-size:13px;color:var(--texte-2);margin-top:2px}
+  .mail-box .row2{margin-top:14px}
+  .mail-box .row2 .btn{font-size:20px;margin:0}
   .mail-box label{font-size:14px;color:var(--texte-2)}
   #email{
     width:100%;margin-top:8px;padding:13px 14px;border-radius:10px;
@@ -376,19 +393,32 @@
     <div class="planche" id="plancheResult"></div>
     <button class="btn btn-red" id="btnMailToggle">Envoyer par e-mail</button>
 
-    <div class="mail-box" id="mailBox">
-      <label for="email">Adresses des destinataires</label>
-      <div class="dest-chips" id="destChips"></div>
-      <input id="email" type="email" inputmode="email" autocomplete="email"
-             autocapitalize="off" spellcheck="false" placeholder="Tapez une adresse puis validez ↵">
-      <div class="sugg" id="sugg"></div>
-      <p class="mail-hint" id="mailHint">La bande photo sera jointe via la feuille de partage — choisissez « Mail ». L'adresse saisie est copiée pour être collée dans le champ destinataire.</p>
-      <button class="btn btn-red" id="btnSendMail" disabled>Envoyer</button>
-    </div>
-
     <button class="btn btn-ghost" id="btnAgain">Recommencer</button>
   </div>
 </section>
+
+<!-- FENÊTRE D'ENVOI (accessible depuis n'importe quel écran) -->
+<div id="mailOverlay">
+  <div class="mail-box" id="mailBox">
+    <div class="mail-cible">
+      <img id="mailPreview" alt="">
+      <div>
+        <div class="mail-what" id="mailWhat">Bande photo</div>
+        <div class="mail-sub" id="mailSub"></div>
+      </div>
+    </div>
+    <label for="email">Adresses des destinataires</label>
+    <div class="dest-chips" id="destChips"></div>
+    <input id="email" type="email" inputmode="email" autocomplete="email"
+           autocapitalize="off" spellcheck="false" placeholder="Tapez une adresse puis validez ↵">
+    <div class="sugg" id="sugg"></div>
+    <p class="mail-hint" id="mailHint"></p>
+    <div class="row2">
+      <button class="btn btn-ghost" id="btnMailClose">Fermer</button>
+      <button class="btn btn-red" id="btnSendMail" disabled>Envoyer</button>
+    </div>
+  </div>
+</div>
 
 <div id="okOverlay" role="alert">
   <div class="ok-card">
@@ -1143,7 +1173,7 @@ document.getElementById('btnFlip').addEventListener('click',async()=>{
 });
 document.getElementById('btnShoot').addEventListener('click',runSession);
 document.getElementById('btnAgain').addEventListener('click',async()=>{
-  document.getElementById('mailBox').classList.remove('open');
+  fermerMail();
   show('capture');
   await startCamera();
   requestAnimationFrame(drawGuide);
@@ -1305,7 +1335,8 @@ function renderPlanche(){
         `<div class="p-thumb">`+
           `<img src="${s.thumb}" alt="Planche complète de ${s.h}">`+
           `<div class="p-thumb-btns">`+
-            `<button class="imp" onclick="printArchived(${s.id})">🖨️ Imprimer</button>`+
+            `<button class="imp" onclick="printArchived(${s.id})">🖨️</button>`+
+            `<button onclick="mailArchived(${s.id})" aria-label="Envoyer par e-mail la planche de ${s.h}">✉️</button>`+
             `<button onclick="deleteSheet(${s.id})" aria-label="Supprimer la planche de ${s.h}">🗑️</button>`+
           `</div>`+
           `<span>${s.h}</span>`+
@@ -1335,6 +1366,19 @@ async function printItems(items){
 }
 function printSheet(){ printItems(planche); }
 function printArchived(id){ const s=sheets.find(x=>x.id===id); if(s)printItems(s.items); }
+async function mailArchived(id){
+  const s=sheets.find(x=>x.id===id);
+  if(!s)return;
+  /* la planche est recomposée en une image d'envoi, plus légère que l'impression */
+  const sheet=await composeSheet(s.items,5,false);
+  ouvrirMail({
+    data:sheet.data,
+    filename:'planche_'+slugEvenement()+'_'+s.h.replace(':','h')+'.jpg',
+    titre:'Planche de '+s.h,
+    sous:s.items.length+' photo'+(s.items.length>1?'s':'')+' sur une feuille A4',
+    apercu:s.thumb
+  });
+}
 async function deleteSheet(id){
   if(!confirm('Supprimer cette planche complète ?'))return;
   sheets=sheets.filter(x=>x.id!==id);
@@ -1407,15 +1451,37 @@ function saveEmailUsed(m){
   try{ localStorage.setItem('cabinePhoto.emails',JSON.stringify(emailsUtilises)); }catch(e){}
 }
 
-document.getElementById('btnMailToggle').addEventListener('click',()=>{
-  const box=document.getElementById('mailBox');
-  box.classList.toggle('open');
-  if(box.classList.contains('open')){
-    document.getElementById('mailHint').textContent=MAIL_ENDPOINT
-      ? 'Vos photos partiront directement par e-mail à l\'adresse indiquée.'
-      : 'La bande photo sera jointe via la feuille de partage — choisissez « Mail ». L\'adresse saisie est copiée pour être collée dans le champ destinataire.';
-    emailEl.focus();renderSugg();
-  }
+/* ---------- Fenêtre d'envoi ----------
+   « cible » désigne ce qui part : la bande qui vient d'être prise, ou n'importe
+   quelle planche déjà en mémoire, sélectionnée depuis sa vignette. */
+let mailCible=null;
+
+function ouvrirMail(cible){
+  mailCible=cible||{
+    data:state.stripData,
+    filename:nomFichier(),
+    titre:'Bande photo',
+    sous:(state.photos.length||'')+' photo'+(state.photos.length>1?'s':''),
+    apercu:state.stripData
+  };
+  document.getElementById('mailPreview').src=mailCible.apercu||mailCible.data;
+  document.getElementById('mailWhat').textContent=mailCible.titre;
+  document.getElementById('mailSub').textContent=mailCible.sous||'';
+  document.getElementById('mailHint').textContent=MAIL_ENDPOINT
+    ? 'L\'envoi part directement aux adresses indiquées.'
+    : 'L\'image sera jointe via la feuille de partage — choisissez « Mail ». Les adresses sont copiées pour être collées dans le champ destinataire.';
+  document.getElementById('mailOverlay').classList.add('on');
+  renderDest();renderSugg();
+  emailEl.focus();
+}
+function fermerMail(){
+  document.getElementById('mailOverlay').classList.remove('on');
+  mailCible=null;
+}
+document.getElementById('btnMailToggle').addEventListener('click',()=>ouvrirMail(null));
+document.getElementById('btnMailClose').addEventListener('click',fermerMail);
+document.getElementById('mailOverlay').addEventListener('click',(e)=>{
+  if(e.target.id==='mailOverlay')fermerMail();
 });
 
 function emailValide(v){return /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(v);}
@@ -1512,7 +1578,7 @@ function showSuccess(dest){
 function finishSuccess(){
   clearInterval(okTimer);
   document.getElementById('okOverlay').classList.remove('on');
-  document.getElementById('mailBox').classList.remove('open');
+  fermerMail();
   emailEl.value='';
   destinataires=[];
   renderDest();
@@ -1528,6 +1594,7 @@ sendBtn.addEventListener('click',async()=>{
   addDest(emailEl.value);
   const dests=[...destinataires];
   if(dests.length===0)return;
+  const cible=mailCible||{data:state.stripData,filename:nomFichier(),titre:'Bande photo'};
   sendBtn.disabled=true;
   const label=sendBtn.textContent;
   sendBtn.textContent='Envoi…';
@@ -1537,8 +1604,8 @@ sendBtn.addEventListener('click',async()=>{
          (personne ne voit les adresses des autres) */
       const corps={
         event:document.getElementById('footerText').value.trim()||'Cabine photo',
-        filename:nomFichier(),
-        image:state.stripData
+        filename:cible.filename,
+        image:cible.data
       };
       for(const d of dests){
         await fetch(MAIL_ENDPOINT,{
@@ -1551,18 +1618,20 @@ sendBtn.addEventListener('click',async()=>{
       showSuccess(dests.join(', '));
     }else{
       /* pas de service configuré : repli sur la feuille de partage iOS */
-      const file=await dataURLtoFile(state.stripData,nomFichier());
+      const file=await dataURLtoFile(cible.data,cible.filename);
       if(navigator.canShare && navigator.canShare({files:[file]})){
         try{await navigator.clipboard.writeText(dests.join(', '));}catch(e){}
-        await navigator.share({files:[file],title:'Bande photo',text:'Voici notre bande photo !'});
+        await navigator.share({files:[file],title:cible.titre,text:'Voici les photos !'});
         dests.forEach(saveEmailUsed);
         showSuccess(dests.join(', '));
       }else{
-        document.getElementById('btnSave').click();
+        const a=document.createElement('a');
+        a.href=cible.data;a.download=cible.filename;
+        document.body.appendChild(a);a.click();a.remove();
         dests.forEach(saveEmailUsed);
         location.href='mailto:'+encodeURIComponent(dests.join(','))
-          +'?subject='+encodeURIComponent('Notre bande photo')
-          +'&body='+encodeURIComponent('Voici notre bande photo (image téléchargée à joindre).');
+          +'?subject='+encodeURIComponent(cible.titre)
+          +'&body='+encodeURIComponent('Voici les photos (image téléchargée à joindre).');
       }
     }
   }catch(e){
