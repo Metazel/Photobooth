@@ -70,12 +70,21 @@
   .seg button.sel{background:var(--rouge);border-color:var(--rouge);color:#fff;font-weight:700}
   .seg.emoji button{font-size:22px;padding:10px 4px}
   .cadre-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;margin-top:8px}
+  .tile-wrap{position:relative}
+  .tile-del{
+    position:absolute;top:-7px;right:-7px;width:24px;height:24px;line-height:1;
+    border-radius:50%;border:1.5px solid #2C3A5C;background:var(--cabine);
+    color:var(--texte);font-size:12px;cursor:pointer;padding:0;
+  }
   .cadre-tile{
+    width:100%;
     border:2px solid #2C3A5C;border-radius:10px;background:var(--cabine-2);
     padding:6px;cursor:pointer;font-family:inherit;
   }
   .cadre-tile.sel{border-color:var(--rouge);box-shadow:0 0 0 3px rgba(230,57,70,.22)}
   .cadre-tile canvas{width:100%;display:block;border-radius:6px}
+  .cadre-tile .vis{position:relative;line-height:0}
+  .cadre-tile .vis img{position:absolute;inset:0;width:100%;height:100%;border-radius:6px}
   .cadre-tile .none-box{
     width:100%;aspect-ratio:1;border-radius:6px;background:var(--cabine);
     display:flex;align-items:center;justify-content:center;color:var(--texte-2);font-size:24px;
@@ -115,8 +124,8 @@
 
   /* ---------- CAPTURE ---------- */
   #capture{background:#000}
-  .cam-wrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
-  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .cam-wrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
   video.miroir{transform:scaleX(-1)}
 
   .guide{position:absolute;inset:0;pointer-events:none}
@@ -316,8 +325,7 @@
 
     <div class="opt-label">Cadre sur les photos</div>
     <div class="cadre-gal" id="cadreGal" role="group" aria-label="Bibliothèque de cadres"></div>
-    <button class="link-btn" id="btnCadreUpload">…ou charger un cadre PNG à fond transparent</button>
-    <div class="file-status" id="cadreStatus">Cadre chargé ✓ <button id="cadreRemove">Retirer</button></div>
+    <button class="link-btn" id="btnCadreUpload">＋ Ajouter un cadre personnalisé à la bibliothèque</button>
     <p class="mini-note" id="cadreNote">Le cadre se superpose à chaque photo et empiète sur ses bords. La bibliothèque s'adapte au mode choisi.</p>
 
     <div class="opt-label">Pied de bande</div>
@@ -399,7 +407,7 @@
 const state = {
   mode:'solo', timer:3, shots:4, facing:'user',
   filter:'none', decor:'none', decorImg:null, decorData:null,
-  cadre:'none', cadreImg:null, cadreData:null,
+  cadre:'none',
   footerImg:null, footerData:null,
   stream:null, photos:[], stripData:null, stripW:0, stripH:0
 };
@@ -464,7 +472,7 @@ segInit('segMode','mode',(m)=>{
     selectSeg('segTimer',10);state.timer=10;
   }
   /* la bibliothèque de cadres dépend du format */
-  const c=CADRES.find(c=>c.id===state.cadre);
+  const c=cadreById(state.cadre);
   if(c && !c.modes.includes(m)) state.cadre='none';
   renderCadreGal();
 });
@@ -520,18 +528,16 @@ document.getElementById('decorRemove').addEventListener('click',()=>{
   decorStatus.classList.remove('on');
   saveSession();
 });
-const cadreStatus=document.getElementById('cadreStatus');
 document.getElementById('btnCadreUpload').addEventListener('click',()=>{
   loadImageFile(document.getElementById('fileCadre'),(img,data)=>{
-    state.cadreImg=img;state.cadreData=data;state.cadre='custom';
-    cadreStatus.classList.add('on');
-    saveSession();renderCadreGal();refreshGuide();
+    const n=cadresPerso.filter(p=>p.mode===state.mode).length+1;
+    const nom=(prompt('Nom du cadre :','Perso '+n)||'Perso '+n).slice(0,14);
+    const p={id:'p'+Date.now(), mode:state.mode, label:nom, data};
+    cadresPerso.push(p);
+    cadreImage(data);
+    state.cadre='perso:'+p.id;
+    persistPerso();saveSession();renderCadreGal();refreshGuide();
   },true);
-});
-document.getElementById('cadreRemove').addEventListener('click',()=>{
-  state.cadreImg=null;state.cadreData=null;state.cadre='none';
-  cadreStatus.classList.remove('on');
-  saveSession();renderCadreGal();refreshGuide();
 });
 
 document.getElementById('btnFooterUpload').addEventListener('click',()=>{
@@ -557,6 +563,7 @@ function show(id){
 const video=document.getElementById('video');
 async function startCamera(){
   stopCamera();
+  cropZone=null;
   try{
     state.stream=await navigator.mediaDevices.getUserMedia({
       video:{facingMode:state.facing,width:{ideal:1600},height:{ideal:1200}},audio:false
@@ -615,6 +622,26 @@ function semis(ctx,w,h,glyphs,taille,marge){
     ctx.fillText(glyphs[(j+1)%glyphs.length],marge,cy);
     ctx.fillText(glyphs[(j+3)%glyphs.length],w-marge,cy);
   }
+}
+
+/* Cadres images hébergés dans le dépôt (dossier /cadres) : la vignette est
+   légère, l'image pleine taille n'est chargée qu'à la sélection. */
+const CADRES_IMG=[
+  {id:'sacha-rap',   label:'Rap 13',      modes:['solo'],   f:'solo-rap-street-art.png'},
+  {id:'sacha-om',    label:'Stade OM',    modes:['solo'],   f:'solo-stade-om.png'},
+  {id:'sacha-port',  label:'Vieux-Port',  modes:['solo'],   f:'solo-vieux-port.png'},
+  {id:'marseille13', label:'Marseille 13',modes:['solo'],   f:'solo-marseille-13.png'},
+  {id:'grp-mars13',  label:'Marseille 13',modes:['groupe'], f:'groupe-marseille-13.png'}
+].map(c=>({...c, src:'cadres/'+c.f, thumb:'cadres/thumbs/'+c.f}));
+
+const IMGS={};
+function cadreImage(src,onload){
+  if(IMGS[src])return IMGS[src];
+  const im=new Image();
+  im.onload=()=>{im._ok=true;if(onload)onload();};
+  im.src=src;
+  IMGS[src]=im;
+  return im;
 }
 
 const CADRES=[
@@ -764,29 +791,53 @@ const CADRES=[
     ctx.beginPath();ctx.moveTo(0,h-b);ctx.lineTo(w,h-b);ctx.stroke();
   }}
 ];
+/* la bibliothèque complète : images hébergées d'abord, puis cadres dessinés */
+const BIBLIO=[...CADRES_IMG,...CADRES];
+
+/* ---------- Cadres personnalisés ajoutés par l'utilisateur ----------
+   Conservés en IndexedDB, ils rejoignent la bibliothèque du mode où ils ont
+   été ajoutés. Techniquement, ils se comportent comme les cadres images du
+   dépôt : leur « src » est simplement une donnée embarquée. */
+let cadresPerso=[];              /* [{id, mode, label, data}] */
+function persoDef(p){
+  return {id:'perso:'+p.id, label:p.label, modes:[p.mode],
+          perso:p, src:p.data, thumb:p.data};
+}
+function allCadres(){ return [...BIBLIO,...cadresPerso.map(persoDef)]; }
+function cadreById(id){ return allCadres().find(c=>c.id===id); }
+
+async function persistPerso(){ await idbSet('cadresPerso',cadresPerso); }
+async function initPerso(){
+  cadresPerso=(await idbGet('cadresPerso'))||[];
+  cadresPerso.forEach(p=>cadreImage(p.data));
+  renderCadreGal();
+}
 
 function drawCadre(ctx,x,y,w,h,type){
-  const c=CADRES.find(c=>c.id===type);
+  const c=cadreById(type);
   if(!c)return;
+  if(c.src){
+    const im=IMGS[c.src];
+    if(im&&im._ok) ctx.drawImage(im,x,y,w,h);
+    return;
+  }
   ctx.save();ctx.translate(x,y);
   c.draw(ctx,w,h);
   ctx.restore();
 }
 
-/* Superpose le cadre choisi (bibliothèque ou PNG chargé) sur une photo */
+/* Superpose le cadre choisi sur une photo */
 function applyCadre(ctx,x,y,w,h){
-  if(state.cadre==='custom'&&state.cadreImg) ctx.drawImage(state.cadreImg,x,y,w,h);
-  else if(state.cadre&&state.cadre!=='none') drawCadre(ctx,x,y,w,h,state.cadre);
+  if(state.cadre&&state.cadre!=='none') drawCadre(ctx,x,y,w,h,state.cadre);
 }
 
 /* ---------- Galerie de cadres, filtrée selon le mode ---------- */
-function cadreThumb(c){
+function fondFactice(){
   const groupe=state.mode==='groupe';
   const W=120, H=groupe?90:120, S=2;
   const cv=document.createElement('canvas');
   cv.width=W*S;cv.height=H*S;
   const ctx=cv.getContext('2d');ctx.scale(S,S);
-  /* fausse photo de fond pour que le cadre se lise */
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#41527A');g.addColorStop(1,'#1E2638');
   ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
@@ -796,44 +847,80 @@ function cadreThumb(c){
     ctx.beginPath();ctx.arc(cx,H*0.45,r,0,6.29);ctx.fill();
     ctx.beginPath();ctx.arc(cx,H*1.0,r*1.9,Math.PI,0);ctx.fill();
   });
-  if(c)c.draw(ctx,W,H);
-  return cv;
+  return {cv,ctx,W,H};
 }
 function renderCadreGal(){
   const gal=document.getElementById('cadreGal');
   gal.innerHTML='';
-  /* tuile « aucun » */
-  const none=document.createElement('button');
-  none.type='button';none.className='cadre-tile'+(state.cadre==='none'?' sel':'');
-  none.innerHTML='<div class="none-box">∅</div><span>Aucun</span>';
-  none.addEventListener('click',()=>{
-    state.cadre='none';state.cadreImg=null;state.cadreData=null;
-    document.getElementById('cadreStatus').classList.remove('on');
+  const tuile=(sel,contenu,label,onclick,onDelete)=>{
+    const wrap=document.createElement('div');
+    wrap.className='tile-wrap';
+    const b=document.createElement('button');
+    b.type='button';b.className='cadre-tile'+(sel?' sel':'');
+    b.setAttribute('aria-pressed',sel);
+    b.appendChild(contenu);
+    const s=document.createElement('span');s.textContent=label;b.appendChild(s);
+    b.addEventListener('click',onclick);
+    wrap.appendChild(b);
+    if(onDelete){
+      const d=document.createElement('button');
+      d.type='button';d.className='tile-del';d.textContent='✕';
+      d.setAttribute('aria-label','Supprimer le cadre '+label);
+      d.addEventListener('click',onDelete);
+      wrap.appendChild(d);
+    }
+    gal.appendChild(wrap);
+  };
+  const choisir=id=>()=>{
+    state.cadre=id;
+    const c=cadreById(id);
+    if(c&&c.src) cadreImage(c.src,refreshGuide);      /* préchargement */
+    saveSession();renderCadreGal();refreshGuide();
+  };
+
+  const vide=document.createElement('div');
+  vide.className='none-box';vide.textContent='∅';
+  tuile(state.cadre==='none',vide,'Aucun',()=>{
+    state.cadre='none';
     saveSession();renderCadreGal();refreshGuide();
   });
-  gal.appendChild(none);
-  CADRES.filter(c=>c.modes.includes(state.mode)).forEach(c=>{
-    const b=document.createElement('button');
-    b.type='button';b.className='cadre-tile'+(state.cadre===c.id?' sel':'');
-    b.setAttribute('aria-pressed',state.cadre===c.id);
-    b.appendChild(cadreThumb(c));
-    const s=document.createElement('span');s.textContent=c.label;b.appendChild(s);
-    b.addEventListener('click',()=>{
-      state.cadre=c.id;state.cadreImg=null;state.cadreData=null;
-      document.getElementById('cadreStatus').classList.remove('on');
-      saveSession();renderCadreGal();refreshGuide();
-    });
-    gal.appendChild(b);
+
+  allCadres().filter(c=>c.modes.includes(state.mode)).forEach(c=>{
+    const {cv,ctx,W,H}=fondFactice();
+    let vis;
+    if(c.src){
+      vis=document.createElement('div');vis.className='vis';
+      vis.appendChild(cv);
+      const im=document.createElement('img');im.src=c.thumb;im.alt='';
+      vis.appendChild(im);
+    }else{
+      c.draw(ctx,W,H);
+      vis=cv;
+    }
+    const suppr=c.perso?(e)=>{
+      e.stopPropagation();
+      if(!confirm('Supprimer le cadre « '+c.label+' » de la bibliothèque ?'))return;
+      cadresPerso=cadresPerso.filter(p=>p.id!==c.perso.id);
+      if(state.cadre===c.id){state.cadre='none';saveSession();}
+      persistPerso();renderCadreGal();refreshGuide();
+    }:null;
+    tuile(state.cadre===c.id,vis,c.label,choisir(c.id),suppr);
   });
-  document.getElementById('cadreNote').textContent=state.mode==='groupe'
-    ? 'Cadres adaptés au format Groupe (4:3). PNG personnalisé : 1120 × 840 px.'
-    : 'Cadres adaptés au format Solo (1:1). PNG personnalisé : 1120 × 1120 px.';
+
+  const n=cadresPerso.filter(p=>p.mode===state.mode).length;
+  document.getElementById('cadreNote').textContent=(state.mode==='groupe'
+    ? 'Cadres du format Groupe (4:3) — PNG personnalisé : 1120 × 840 px.'
+    : 'Cadres du format Solo (1:1) — PNG personnalisé : 1120 × 1120 px.')
+    +(n?` ${n} cadre${n>1?'s':''} personnalisé${n>1?'s':''} dans ce mode.`:'');
 }
 /* Aperçu du cadre dans le viseur */
 function cadreOverlay(left,top,rw,rh){
   if(!state.cadre||state.cadre==='none')return '';
-  let src=state.cadreData;
-  if(state.cadre!=='custom'){
+  const c=cadreById(state.cadre);
+  if(!c)return '';
+  let src;
+  if(c.src){ cadreImage(c.src); src=c.src; }
+  else{
     const cv=document.createElement('canvas');
     cv.width=Math.max(1,Math.round(rw));cv.height=Math.max(1,Math.round(rh));
     drawCadre(cv.getContext('2d'),0,0,cv.width,cv.height,state.cadre);
@@ -848,11 +935,23 @@ function refreshGuide(){
 
 /* ---------- Cadre de délimitation (ratio selon le mode) ---------- */
 function ratio(){return state.mode==='groupe'?4/3:1;}
+
+/* Zone réellement capturée, en pixels de la caméra. Calculée en même temps que
+   le rectangle de cadrage : ce que l'on voit dans le rectangle est exactement
+   ce qui sera pris en photo. */
+let cropZone=null;
+
 function drawGuide(){
   const g=document.getElementById('guide');
   const W=g.clientWidth,H=g.clientHeight,R=ratio();
-  let rw=Math.min(W*0.9,H*0.9*R), rh=rw/R;
+  const vw=video.videoWidth||4, vh=video.videoHeight||3;
+  /* l'aperçu est en « contain » : tout le champ de la caméra est visible */
+  const s=Math.min(W/vw,H/vh);
+  const vdw=vw*s, vdh=vh*s;
+  /* le rectangle s'inscrit dans l'image affichée, pas dans l'écran */
+  const rw=Math.min(vdw*0.96, vdh*0.96*R), rh=rw/R;
   const left=(W-rw)/2, top=(H-rh)/2;
+  cropZone={sx:(vw-rw/s)/2, sy:(vh-rh/s)/2, sw:rw/s, sh:rh/s};
   g.innerHTML=
     `<div class="band h" style="top:0;height:${top}px"></div>`+
     `<div class="band h" style="bottom:0;height:${H-top-rh}px"></div>`+
@@ -861,6 +960,8 @@ function drawGuide(){
     `<div class="frame-line" style="left:${left}px;top:${top}px;width:${rw}px;height:${rh}px"></div>`+
     cadreOverlay(left,top,rw,rh);
 }
+/* les dimensions réelles du flux n'arrivent qu'après l'ouverture de la caméra */
+video.addEventListener('loadedmetadata',()=>{cropZone=null;refreshGuide();});
 window.addEventListener('resize',()=>{ if(document.getElementById('capture').classList.contains('active')) drawGuide(); });
 
 /* ---------- Prise de vue ---------- */
@@ -880,13 +981,17 @@ async function countdown(sec){
 
 function capturePhoto(){
   const vw=video.videoWidth,vh=video.videoHeight,R=ratio();
-  let cw=Math.min(vw,vh*R), ch=cw/R;
-  const sx=(vw-cw)/2, sy=(vh-ch)/2;
+  /* on reprend la zone du rectangle de cadrage ; repli centré si non calculée */
+  let z=cropZone;
+  if(!z){
+    const cw=Math.min(vw,vh*R);
+    z={sx:(vw-cw)/2, sy:(vh-cw/R)/2, sw:cw, sh:cw/R};
+  }
   const W=R===1?800:960, H=R===1?800:720;
   const c=document.createElement('canvas');c.width=W;c.height=H;
   const ctx=c.getContext('2d');
   if(state.facing==='user'){ctx.translate(W,0);ctx.scale(-1,1);}
-  ctx.drawImage(video,sx,sy,cw,ch,0,0,W,H);
+  ctx.drawImage(video,z.sx,z.sy,z.sw,z.sh,0,0,W,H);
   ctx.setTransform(1,0,0,1,0,0);
   pixelFilter(c,state.filter);
   return c;
@@ -961,15 +1066,20 @@ function composeStrip(){
   const FW=560, FH=state.mode==='groupe'?420:560;
   const W=FW+2*M;
   const n=state.photos.length;
-  const bandeauH=state.decorImg?150+G:0;
-  const footerH=state.footerImg?160:110;
+  /* Hauteurs adaptées au ratio réel des images chargées : elles s'affichent
+     en entier, sur toute la largeur, sans recadrage. */
+  const hauteurImg=(img,mini,maxi)=>Math.max(mini,Math.min(maxi,Math.round(FW*img.height/img.width)));
+  const bandeauImgH=state.decorImg?hauteurImg(state.decorImg,60,300):0;
+  const bandeauH=state.decorImg?bandeauImgH+G:0;
+  const footerImgH=state.footerImg?hauteurImg(state.footerImg,60,320):0;
+  const footerH=state.footerImg?footerImgH+28:110;
   const H=M+bandeauH+n*FH+(n-1)*G+footerH;
   const c=document.createElement('canvas');c.width=W;c.height=H;
   const ctx=c.getContext('2d');
   ctx.fillStyle='#FFFFFF';ctx.fillRect(0,0,W,H);
 
   /* Bandeau d'image personnalisé en haut */
-  if(state.decorImg){ drawCover(ctx,state.decorImg,M,M,FW,150); }
+  if(state.decorImg){ ctx.drawImage(state.decorImg,M,M,FW,bandeauImgH); }
 
   /* Photos */
   const y0=M+bandeauH;
@@ -1000,7 +1110,7 @@ function composeStrip(){
   /* Pied de bande : image ou texte */
   const fy=y0+n*FH+(n-1)*G;
   if(state.footerImg){
-    drawCover(ctx,state.footerImg,M,fy+14,FW,footerH-28);
+    ctx.drawImage(state.footerImg,M,fy+14,FW,footerImgH);
   }else{
     const titre=(document.getElementById('footerText').value.trim()||'CABINE PHOTO').toUpperCase();
     ctx.fillStyle='#0E1526';
@@ -1474,7 +1584,7 @@ function saveSession(){
     localStorage.setItem(LS_KEY,JSON.stringify({
       mode:state.mode, timer:state.timer, shots:state.shots, filter:state.filter,
       decor:state.decor, decorData:state.decorData, footerData:state.footerData,
-      cadre:state.cadre, cadreData:state.cadreData,
+      cadre:state.cadre,
       footerText:document.getElementById('footerText').value
     }));
   }catch(e){ /* stockage indisponible : la session reste en mémoire vive */ }
@@ -1499,11 +1609,6 @@ function restoreSession(){
     const im=new Image(); im.onload=()=>{state.decorImg=im;}; im.src=s.decorData;
     decorStatus.classList.add('on');
   }
-  if(s.cadreData){
-    state.cadreData=s.cadreData;
-    const im=new Image(); im.onload=()=>{state.cadreImg=im;}; im.src=s.cadreData;
-    document.getElementById('cadreStatus').classList.add('on');
-  }
   if(s.footerData){
     state.footerData=s.footerData;
     const im=new Image(); im.onload=()=>{state.footerImg=im;}; im.src=s.footerData;
@@ -1513,6 +1618,7 @@ function restoreSession(){
 document.getElementById('footerText').addEventListener('input',saveSession);
 restoreSession();
 renderCadreGal();
+initPerso();          /* les cadres personnalisés rejoignent la bibliothèque */
 
 /* ---------- Nettoyage ---------- */
 window.addEventListener('pagehide',stopCamera);
