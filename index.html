@@ -69,6 +69,21 @@
   }
   .seg button.sel{background:var(--rouge);border-color:var(--rouge);color:#fff;font-weight:700}
   .seg.emoji button{font-size:22px;padding:10px 4px}
+  .band-gal{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+  .band-gal .tile-wrap{position:relative}
+  .band-tile{
+    width:100%;border:2px solid #2C3A5C;border-radius:10px;background:var(--cabine-2);
+    padding:6px;cursor:pointer;font-family:inherit;
+  }
+  .band-tile.sel{border-color:var(--rouge);box-shadow:0 0 0 3px rgba(230,57,70,.22)}
+  .band-tile img{width:100%;display:block;border-radius:5px;background:#fff;aspect-ratio:1120/300;object-fit:cover}
+  .band-tile .txt-box{
+    width:100%;aspect-ratio:1120/300;border-radius:5px;background:var(--cabine);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--texte-2);font-family:'Bebas Neue',sans-serif;letter-spacing:.08em;font-size:15px;
+  }
+  .band-tile span{display:block;font-size:11px;color:var(--texte-2);margin-top:5px;text-align:center}
+  .band-tile.sel span{color:var(--texte);font-weight:700}
   .cadre-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;margin-top:8px}
   .tile-wrap{position:relative}
   .tile-del{
@@ -337,24 +352,28 @@
       <button data-v="confettis" aria-label="Confettis">🎊</button>
       <button data-v="etoiles" aria-label="Étoiles">✨</button>
     </div>
-    <button class="link-btn" id="btnDecorUpload">…ou charger un bandeau d'image (haut de bande)</button>
-    <div class="file-status" id="decorStatus">Bandeau chargé ✓ <button id="decorRemove">Retirer</button></div>
 
     <div class="opt-label">Cadre sur les photos</div>
     <div class="cadre-gal" id="cadreGal" role="group" aria-label="Bibliothèque de cadres"></div>
     <button class="link-btn" id="btnCadreUpload">＋ Ajouter un cadre personnalisé à la bibliothèque</button>
     <p class="mini-note" id="cadreNote">Le cadre se superpose à chaque photo et empiète sur ses bords. La bibliothèque s'adapte au mode choisi.</p>
 
-    <div class="opt-label">Pied de bande</div>
+    <div class="opt-label">Habillage de la bande</div>
+    <div class="band-gal" id="bandGal" role="group" aria-label="Bibliothèque de bandeaux"></div>
+    <div id="bandPosWrap" style="display:none">
+      <div class="seg" id="segBandPos" role="group" aria-label="Position du bandeau">
+        <button data-v="haut">En haut</button>
+        <button data-v="pied" class="sel">En pied</button>
+      </div>
+    </div>
     <input class="txt-input" id="footerText" type="text" maxlength="40"
            placeholder="Intitulé de l'événement (ex. Anniversaire de Sacha)">
-    <button class="link-btn" id="btnFooterUpload">…ou charger une image de pied de bande</button>
-    <div class="file-status" id="footerStatus">Image de pied chargée ✓ <button id="footerRemove">Retirer</button></div>
+    <button class="link-btn" id="btnBandUpload">＋ Ajouter un bandeau à la bibliothèque</button>
+    <p class="mini-note" id="bandNote"></p>
   </div>
 
-  <input type="file" id="fileDecor" accept="image/*" hidden>
+  <input type="file" id="fileBand" accept="image/*" hidden>
   <input type="file" id="fileCadre" accept="image/*" hidden>
-  <input type="file" id="fileFooter" accept="image/*" hidden>
 
   <button class="btn btn-red" id="btnStart">Entrer dans la cabine</button>
 </section>
@@ -436,9 +455,9 @@
 /* ---------- État ---------- */
 const state = {
   mode:'solo', timer:3, shots:4, facing:'user',
-  filter:'none', decor:'none', decorImg:null, decorData:null,
+  filter:'none', decor:'none',
   cadre:'none',
-  footerImg:null, footerData:null,
+  bandeau:'texte', bandeauPos:'pied',
   stream:null, photos:[], stripData:null, stripW:0, stripH:0
 };
 
@@ -506,7 +525,7 @@ segInit('segMode','mode',(m)=>{
   if(c && !c.modes.includes(m)) state.cadre='none';
   renderCadreGal();
 });
-segInit('segDecor','decor',()=>{ state.decorImg=null; state.decorData=null; decorStatus.classList.remove('on'); });
+segInit('segDecor','decor');
 
 function selectSeg(id,val){
   document.querySelectorAll('#'+id+' button').forEach(b=>{
@@ -514,10 +533,7 @@ function selectSeg(id,val){
   });
 }
 
-/* ---------- Chargement d'images (bandeau décor + pied de bande) ---------- */
-const decorStatus=document.getElementById('decorStatus');
-const footerStatus=document.getElementById('footerStatus');
-
+/* ---------- Chargement d'images ---------- */
 function loadImageFile(input,cb,png){
   input.onchange=()=>{
     const f=input.files[0];
@@ -544,20 +560,6 @@ function loadImageFile(input,cb,png){
   };
   input.click();
 }
-document.getElementById('btnDecorUpload').addEventListener('click',()=>{
-  loadImageFile(document.getElementById('fileDecor'),(img,data)=>{
-    state.decorImg=img;state.decorData=data;state.decor='custom';
-    selectSeg('segDecor','__none__');           /* désélectionne les presets */
-    decorStatus.classList.add('on');
-    saveSession();
-  });
-});
-document.getElementById('decorRemove').addEventListener('click',()=>{
-  state.decorImg=null;state.decorData=null;state.decor='none';
-  selectSeg('segDecor','none');
-  decorStatus.classList.remove('on');
-  saveSession();
-});
 document.getElementById('btnCadreUpload').addEventListener('click',()=>{
   loadImageFile(document.getElementById('fileCadre'),(img,data)=>{
     const n=cadresPerso.filter(p=>p.mode===state.mode).length+1;
@@ -569,18 +571,16 @@ document.getElementById('btnCadreUpload').addEventListener('click',()=>{
     persistPerso();saveSession();renderCadreGal();refreshGuide();
   },true);
 });
-
-document.getElementById('btnFooterUpload').addEventListener('click',()=>{
-  loadImageFile(document.getElementById('fileFooter'),(img,data)=>{
-    state.footerImg=img;state.footerData=data;
-    footerStatus.classList.add('on');
-    saveSession();
+document.getElementById('btnBandUpload').addEventListener('click',()=>{
+  loadImageFile(document.getElementById('fileBand'),(img,data)=>{
+    const n=bandeauxPerso.length+1;
+    const nom=(prompt('Nom du bandeau :','Bandeau '+n)||'Bandeau '+n).slice(0,16);
+    const p={id:'b'+Date.now(), label:nom, data};
+    bandeauxPerso.push(p);
+    bandImage(data);
+    state.bandeau='perso:'+p.id;
+    persistBandeaux();saveSession();renderBandGal();
   });
-});
-document.getElementById('footerRemove').addEventListener('click',()=>{
-  state.footerImg=null;state.footerData=null;
-  footerStatus.classList.remove('on');
-  saveSession();
 });
 
 /* ---------- Navigation écrans ---------- */
@@ -824,6 +824,45 @@ const CADRES=[
 /* la bibliothèque complète : images hébergées d'abord, puis cadres dessinés */
 const BIBLIO=[...CADRES_IMG,...CADRES];
 
+/* ---------- Bibliothèque de bandeaux (haut ou pied de bande) ----------
+   Les fichiers vivent dans le dossier /bandeaux du dépôt et sont déclarés
+   dans /bandeaux/index.json, au format :
+     [ {"f":"sacha-haut.jpg","label":"Sacha 18 ans"}, … ]
+   La vignette facultative va dans /bandeaux/thumbs/ sous le même nom.
+   Sans manifeste, seuls les bandeaux ajoutés depuis l'application s'affichent. */
+let BANDEAUX_IMG=[];
+let bandeauxPerso=[];            /* [{id, label, data}] */
+const BIMGS={};
+function bandImage(src,onload){
+  if(BIMGS[src])return BIMGS[src];
+  const im=new Image();
+  im.onload=()=>{im._ok=true;if(onload)onload();};
+  im.src=src;
+  BIMGS[src]=im;
+  return im;
+}
+function bandeauDef(p){ return {id:'perso:'+p.id, label:p.label, perso:p, src:p.data, thumb:p.data}; }
+function allBandeaux(){ return [...BANDEAUX_IMG,...bandeauxPerso.map(bandeauDef)]; }
+function bandeauById(id){ return allBandeaux().find(b=>b.id===id); }
+
+async function persistBandeaux(){ await idbSet('bandeauxPerso',bandeauxPerso); }
+async function initBandeaux(){
+  try{
+    const r=await fetch('bandeaux/index.json',{cache:'no-cache'});
+    if(r.ok){
+      const list=await r.json();
+      BANDEAUX_IMG=list.map(b=>({
+        id:'img:'+b.f, label:b.label||b.f.replace(/\.[a-z]+$/i,''),
+        src:'bandeaux/'+b.f, thumb:'bandeaux/'+(b.thumb||'thumbs/'+b.f)
+      }));
+    }
+  }catch(e){ /* pas de manifeste : la bibliothèque se limite aux ajouts locaux */ }
+  bandeauxPerso=(await idbGet('bandeauxPerso'))||[];
+  bandeauxPerso.forEach(p=>bandImage(p.data));
+  allBandeaux().forEach(b=>bandImage(b.src));
+  renderBandGal();
+}
+
 /* ---------- Cadres personnalisés ajoutés par l'utilisateur ----------
    Conservés en IndexedDB, ils rejoignent la bibliothèque du mode où ils ont
    été ajoutés. Techniquement, ils se comportent comme les cadres images du
@@ -859,6 +898,63 @@ function drawCadre(ctx,x,y,w,h,type){
 /* Superpose le cadre choisi sur une photo */
 function applyCadre(ctx,x,y,w,h){
   if(state.cadre&&state.cadre!=='none') drawCadre(ctx,x,y,w,h,state.cadre);
+}
+
+/* ---------- Galerie de bandeaux ----------
+   Exclusif : soit un bandeau image (en haut ou en pied), soit le texte saisi. */
+function renderBandGal(){
+  const gal=document.getElementById('bandGal');
+  gal.innerHTML='';
+  const tuile=(sel,contenu,label,onclick,onDelete)=>{
+    const wrap=document.createElement('div');
+    wrap.className='tile-wrap';
+    const b=document.createElement('button');
+    b.type='button';b.className='band-tile'+(sel?' sel':'');
+    b.setAttribute('aria-pressed',sel);
+    b.appendChild(contenu);
+    const s=document.createElement('span');s.textContent=label;b.appendChild(s);
+    b.addEventListener('click',onclick);
+    wrap.appendChild(b);
+    if(onDelete){
+      const d=document.createElement('button');
+      d.type='button';d.className='tile-del';d.textContent='✕';
+      d.setAttribute('aria-label','Supprimer le bandeau '+label);
+      d.addEventListener('click',onDelete);
+      wrap.appendChild(d);
+    }
+    gal.appendChild(wrap);
+  };
+
+  const txt=document.createElement('div');
+  txt.className='txt-box';txt.textContent='TEXTE';
+  tuile(state.bandeau==='texte',txt,'Texte saisi',()=>{
+    state.bandeau='texte';saveSession();renderBandGal();
+  });
+
+  allBandeaux().forEach(b=>{
+    const im=document.createElement('img');
+    im.alt='';
+    im.onerror=()=>{ if(im.src!==location.href&&!im.dataset.fb){im.dataset.fb='1';im.src=b.src;} };
+    im.src=b.thumb||b.src;        /* pas de vignette : on retombe sur l'original */
+    const suppr=b.perso?(e)=>{
+      e.stopPropagation();
+      if(!confirm('Supprimer le bandeau « '+b.label+' » ?'))return;
+      bandeauxPerso=bandeauxPerso.filter(p=>p.id!==b.perso.id);
+      if(state.bandeau===b.id){state.bandeau='texte';}
+      persistBandeaux();saveSession();renderBandGal();
+    }:null;
+    tuile(state.bandeau===b.id,im,b.label,()=>{
+      state.bandeau=b.id;bandImage(b.src);saveSession();renderBandGal();
+    },suppr);
+  });
+
+  const img=state.bandeau!=='texte';
+  document.getElementById('bandPosWrap').style.display=img?'block':'none';
+  document.getElementById('footerText').style.display=img?'none':'block';
+  selectSeg('segBandPos',state.bandeauPos);
+  document.getElementById('bandNote').textContent=img
+    ? 'Le bandeau remplace le texte, '+(state.bandeauPos==='haut'?'en tête de bande.':'en pied de bande.')
+    : 'Le texte saisi est imprimé en pied de bande, avec la date. Il sert aussi à nommer les fichiers envoyés.';
 }
 
 /* ---------- Galerie de cadres, filtrée selon le mode ---------- */
@@ -1096,20 +1192,24 @@ function composeStrip(){
   const FW=560, FH=state.mode==='groupe'?420:560;
   const W=FW+2*M;
   const n=state.photos.length;
-  /* Hauteurs adaptées au ratio réel des images chargées : elles s'affichent
-     en entier, sur toute la largeur, sans recadrage. */
-  const hauteurImg=(img,mini,maxi)=>Math.max(mini,Math.min(maxi,Math.round(FW*img.height/img.width)));
-  const bandeauImgH=state.decorImg?hauteurImg(state.decorImg,60,300):0;
-  const bandeauH=state.decorImg?bandeauImgH+G:0;
-  const footerImgH=state.footerImg?hauteurImg(state.footerImg,60,320):0;
-  const footerH=state.footerImg?footerImgH+28:110;
+  /* Habillage : soit un bandeau image (en haut OU en pied), soit le texte saisi.
+     La hauteur suit le ratio réel de l'image, qui s'affiche donc en entier. */
+  const bd=state.bandeau!=='texte'?bandeauById(state.bandeau):null;
+  const bimg=bd?BIMGS[bd.src]:null;
+  const utilisable=bimg&&bimg._ok;
+  const hauteurImg=(img)=>Math.max(60,Math.min(320,Math.round(FW*img.height/img.width)));
+  const bH=utilisable?hauteurImg(bimg):0;
+  const enHaut=utilisable&&state.bandeauPos==='haut';
+  const enPied=utilisable&&state.bandeauPos==='pied';
+  const bandeauH=enHaut?bH+G:0;
+  const footerH=enPied?bH+28:110;
   const H=M+bandeauH+n*FH+(n-1)*G+footerH;
   const c=document.createElement('canvas');c.width=W;c.height=H;
   const ctx=c.getContext('2d');
   ctx.fillStyle='#FFFFFF';ctx.fillRect(0,0,W,H);
 
-  /* Bandeau d'image personnalisé en haut */
-  if(state.decorImg){ ctx.drawImage(state.decorImg,M,M,FW,bandeauImgH); }
+  /* Bandeau en tête */
+  if(enHaut){ ctx.drawImage(bimg,M,M,FW,bH); }
 
   /* Photos */
   const y0=M+bandeauH;
@@ -1137,10 +1237,10 @@ function composeStrip(){
     });
   }
 
-  /* Pied de bande : image ou texte */
+  /* Pied de bande : bandeau image ou texte saisi */
   const fy=y0+n*FH+(n-1)*G;
-  if(state.footerImg){
-    ctx.drawImage(state.footerImg,M,fy+14,FW,footerImgH);
+  if(enPied){
+    ctx.drawImage(bimg,M,fy+14,FW,bH);
   }else{
     const titre=(document.getElementById('footerText').value.trim()||'CABINE PHOTO').toUpperCase();
     ctx.fillStyle='#0E1526';
@@ -1645,15 +1745,15 @@ sendBtn.addEventListener('click',async()=>{
 });
 
 /* ---------- Mémorisation de la session ----------
-   Les réglages, le texte d'événement et les images chargées (bandeau, pied)
-   sont conservés et proposés par défaut à chaque ouverture, jusqu'à retrait. */
+   Réglages, cadre, bandeau et intitulé sont conservés et proposés par défaut
+   à chaque ouverture, le temps de l'événement. */
 const LS_KEY='cabinePhoto.v1';
 function saveSession(){
   try{
     localStorage.setItem(LS_KEY,JSON.stringify({
       mode:state.mode, timer:state.timer, shots:state.shots, filter:state.filter,
-      decor:state.decor, decorData:state.decorData, footerData:state.footerData,
-      cadre:state.cadre,
+      decor:state.decor, cadre:state.cadre,
+      bandeau:state.bandeau, bandeauPos:state.bandeauPos,
       footerText:document.getElementById('footerText').value
     }));
   }catch(e){ /* stockage indisponible : la session reste en mémoire vive */ }
@@ -1666,28 +1766,24 @@ function restoreSession(){
   state.filter=FILTRES[s.filter]?s.filter:'none';
   state.decor=s.decor||'none';
   state.cadre=s.cadre||'none';
+  state.bandeau=s.bandeau||'texte';
+  state.bandeauPos=s.bandeauPos==='haut'?'haut':'pied';
   selectSeg('segMode',state.mode);
   selectSeg('segTimer',state.timer);
   selectSeg('segShots',state.shots);
-  selectSeg('segDecor',state.decor==='custom'?'__none__':state.decor);
+  selectSeg('segDecor',state.decor);
+  selectSeg('segBandPos',state.bandeauPos);
   document.getElementById('footerText').value=s.footerText||'';
   document.querySelectorAll('#filtres button').forEach(b=>b.classList.toggle('sel',b.dataset.v===state.filter));
   video.style.filter=FILTRES[state.filter].css;
-  if(s.decorData){
-    state.decorData=s.decorData;
-    const im=new Image(); im.onload=()=>{state.decorImg=im;}; im.src=s.decorData;
-    decorStatus.classList.add('on');
-  }
-  if(s.footerData){
-    state.footerData=s.footerData;
-    const im=new Image(); im.onload=()=>{state.footerImg=im;}; im.src=s.footerData;
-    footerStatus.classList.add('on');
-  }
 }
 document.getElementById('footerText').addEventListener('input',saveSession);
+segInit('segBandPos','bandeauPos',()=>renderBandGal());
 restoreSession();
 renderCadreGal();
-initPerso();          /* les cadres personnalisés rejoignent la bibliothèque */
+renderBandGal();
+initPerso();          /* cadres personnalisés */
+initBandeaux();       /* manifeste /bandeaux + bandeaux personnalisés */
 
 /* ---------- Nettoyage ---------- */
 window.addEventListener('pagehide',stopCamera);
