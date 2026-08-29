@@ -6,6 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Cabine Photo</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0E1526">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
@@ -56,6 +59,18 @@
   h1 span{color:var(--rouge)}
   .tagline{margin-top:10px;color:var(--texte-2);font-size:15px}
 
+  .outbox{
+    display:none;width:100%;max-width:380px;margin-top:14px;
+    background:var(--cabine-2);border:1.5px solid var(--ampoule);border-radius:12px;
+    padding:12px 14px;text-align:left;font-size:14px;color:var(--texte);line-height:1.45;
+  }
+  .outbox.on{display:block}
+  .outbox b{color:var(--ampoule)}
+  .outbox button{
+    margin-top:10px;width:100%;padding:10px;border-radius:9px;
+    border:1.5px solid #2C3A5C;background:var(--cabine);color:var(--texte);
+    font-family:inherit;font-size:15px;cursor:pointer;
+  }
   .options{margin-top:26px;width:100%;max-width:380px;text-align:left}
   .opt-label{
     font-family:'Bebas Neue',sans-serif;letter-spacing:.12em;
@@ -320,6 +335,7 @@
     <h1>CABINE<br><span>PHOTO</span></h1>
   </div>
   <p class="tagline">Souriez, la pellicule est offerte.</p>
+  <div class="outbox" id="outboxInfo"></div>
   <div class="planche" id="plancheHome"></div>
 
   <div class="options">
@@ -441,9 +457,10 @@
 
 <div id="okOverlay" role="alert">
   <div class="ok-card">
-    <div class="ok-emoji">📬</div>
-    <h2>Photos envoyées !</h2>
-    <p>Vos photos ont été envoyées à<br><b id="okDest"></b></p>
+    <div class="ok-emoji" id="okEmoji">📬</div>
+    <h2 id="okTitre">Photos envoyées !</h2>
+    <p id="okTexte">Vos photos ont été envoyées à</p>
+    <p><b id="okDest"></b></p>
     <p class="ok-count">Retour à l'accueil dans <span id="okSec">5</span> s…</p>
     <button class="btn btn-red" id="okHome">Retour à l'accueil</button>
   </div>
@@ -1661,9 +1678,56 @@ async function dataURLtoFile(dataUrl,name){
   return new File([blob],name,{type:'image/jpeg'});
 }
 
+/* ---------- File d'attente d'envoi (mode hors ligne) ----------
+   Sans réseau, les e-mails sont conservés et partent automatiquement
+   dès que la connexion revient. */
+let outbox=[];
+async function persistOutbox(){ await idbSet('outbox',outbox); }
+function majOutbox(){
+  const el=document.getElementById('outboxInfo');
+  if(!el)return;
+  if(outbox.length===0){el.classList.remove('on');el.innerHTML='';return;}
+  const n=outbox.length;
+  el.innerHTML=`📨 <b>${n} e-mail${n>1?'s':''} en attente</b><br>`+
+    (navigator.onLine
+      ? 'Connexion détectée — envoi en cours…'
+      : 'Ils partiront automatiquement dès le retour du réseau.')+
+    `<button onclick="flushOutbox(true)">Réessayer maintenant</button>`;
+  el.classList.add('on');
+}
+async function flushOutbox(manuel){
+  if(!MAIL_ENDPOINT||outbox.length===0){majOutbox();return;}
+  if(!navigator.onLine&&!manuel){majOutbox();return;}
+  const reste=[];
+  for(const m of outbox){
+    try{
+      await fetch(MAIL_ENDPOINT,{
+        method:'POST', mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify(m)
+      });
+    }catch(e){ reste.push(m); }
+  }
+  outbox=reste;
+  await persistOutbox();
+  majOutbox();
+}
+async function initOutbox(){
+  outbox=(await idbGet('outbox'))||[];
+  majOutbox();
+  flushOutbox();
+}
+window.addEventListener('online',()=>flushOutbox());
+window.addEventListener('offline',majOutbox);
+
 /* ---------- Confirmation d'envoi + retour accueil (5 s ou bouton) ---------- */
 let okTimer=null;
-function showSuccess(dest){
+function showSuccess(dest,differe){
+  document.getElementById('okEmoji').textContent=differe?'📨':'📬';
+  document.getElementById('okTitre').textContent=differe?'Photos en attente':'Photos envoyées !';
+  document.getElementById('okTexte').textContent=differe
+    ? 'Pas de réseau — l\'envoi partira tout seul à la reconnexion, à'
+    : 'Vos photos ont été envoyées à';
   document.getElementById('okDest').textContent=dest;
   document.getElementById('okOverlay').classList.add('on');
   let s=5;
@@ -1700,22 +1764,34 @@ sendBtn.addEventListener('click',async()=>{
   sendBtn.textContent='Envoi…';
   try{
     if(MAIL_ENDPOINT){
-      /* envoi direct : chaque destinataire reçoit son propre e-mail
-         (personne ne voit les adresses des autres) */
+      /* un e-mail par destinataire : personne ne voit les adresses des autres */
       const corps={
         event:document.getElementById('footerText').value.trim()||'Cabine photo',
         filename:cible.filename,
         image:cible.data
       };
-      for(const d of dests){
-        await fetch(MAIL_ENDPOINT,{
-          method:'POST', mode:'no-cors',
-          headers:{'Content-Type':'text/plain;charset=utf-8'},
-          body:JSON.stringify({...corps,to:d})
-        });
+      const messages=dests.map(d=>({...corps,to:d}));
+      if(!navigator.onLine){
+        /* hors ligne : on met en file, l'envoi partira à la reconnexion */
+        outbox.push(...messages);
+        await persistOutbox();majOutbox();
+        dests.forEach(saveEmailUsed);
+        showSuccess(dests.join(', '),true);
+      }else{
+        let echecs=0;
+        for(const m of messages){
+          try{
+            await fetch(MAIL_ENDPOINT,{
+              method:'POST', mode:'no-cors',
+              headers:{'Content-Type':'text/plain;charset=utf-8'},
+              body:JSON.stringify(m)
+            });
+          }catch(e){ outbox.push(m); echecs++; }
+        }
+        if(echecs){ await persistOutbox();majOutbox(); }
+        dests.forEach(saveEmailUsed);
+        showSuccess(dests.join(', '),echecs>0);
       }
-      dests.forEach(saveEmailUsed);
-      showSuccess(dests.join(', '));
     }else{
       /* pas de service configuré : repli sur la feuille de partage iOS */
       const file=await dataURLtoFile(cible.data,cible.filename);
@@ -1784,6 +1860,14 @@ renderCadreGal();
 renderBandGal();
 initPerso();          /* cadres personnalisés */
 initBandeaux();       /* manifeste /bandeaux + bandeaux personnalisés */
+initOutbox();         /* e-mails restés en attente */
+
+/* ---------- Disponibilité hors ligne ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
 
 /* ---------- Nettoyage ---------- */
 window.addEventListener('pagehide',stopCamera);
